@@ -1243,10 +1243,7 @@ class BoostConan(ConanFile):
         contents += f'\nusing "{self._toolset}" : {self._toolset_version} : '
 
         cxx_fwd_slahes = self._cxx.replace("\\", "/")
-        if self._is_msvc:
-            contents += f' "{cxx_fwd_slahes}"'
-        else:
-            contents += f' {cxx_fwd_slahes}'
+        contents += f' "{cxx_fwd_slahes}"'
 
         if is_apple_os(self):
             if self.settings.compiler == "apple-clang":
