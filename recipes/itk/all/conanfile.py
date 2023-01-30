@@ -1,5 +1,6 @@
+from contextlib import contextmanager
 import functools
-
+from conan.tools.microsoft import is_msvc
 from conans import ConanFile, CMake, tools
 from conans.errors import ConanInvalidConfiguration
 import glob
@@ -97,7 +98,7 @@ class ITKConan(ConanFile):
             self.requires("gdcm/3.0.9")
         if self.options.with_elastix and self.options.with_python_bindings:
             self.requires("libdeflate/1.14")
-
+            
         self.requires("double-conversion/3.2.0")
         self.requires("eigen/3.4.0")
         self.requires("expat/2.4.8")
@@ -108,6 +109,25 @@ class ITKConan(ConanFile):
         self.requires("libtiff/4.3.0")
         self.requires("onetbb/2021.7.0")
         self.requires("zlib/1.2.12")
+
+    def build_requirements(self):
+        if self.options.with_rtk and self.settings.os == "Windows":
+            self.tool_requires("msys2/cci.latest")
+
+    @contextmanager
+    def _build_context(self):
+        with tools.vcvars(self) if is_msvc(self) else tools.no_op():
+            # next lines force cmake package to be in PATH before the one provided by visual studio (vcvars)
+            build_env = tools.RunEnvironment(self).vars if is_msvc(self) else {}
+            build_env["MAKEFLAGS"] = "j%d" % tools.cpu_count()
+            build_env["PKG_CONFIG_PATH"] = [self.generators_folder, self.build_folder]
+            if is_msvc(self):
+                # this avoids cmake using gcc from strawberryperl
+                build_env["CC"] = "cl"
+                build_env["CXX"] = "cl"
+            with tools.environment_append(build_env):
+                yield
+
 
     @property
     def _minimum_cpp_standard(self):
@@ -405,32 +425,33 @@ class ITKConan(ConanFile):
         return cmake
 
     def build(self):
-        self._patch_sources()
-        cmake = self._configure_cmake()
-        self._patch_rtk()
-        cmake.build()
+        with self._build_context():
+            self._patch_sources()
+            cmake = self._configure_cmake()
+            self._patch_rtk()
+            cmake.build()
 
-        # configure optional itk modules
-        if self.options.with_elastix:
-            # download the code
-            # because Elastix depends on ITK being installed while ITKElastix requires the source folder,
-            # we are forced to run cmake.install here
-            self._configure_cmake().install()
+            # configure optional itk modules
+            if self.options.with_elastix:
+                # download the code
+                # because Elastix depends on ITK being installed while ITKElastix requires the source folder,
+                # we are forced to run cmake.install here
+                self._configure_cmake().install()
 
-            # download the elastix source code
-            git = tools.Git(folder=self._source_elastix_subfolder)
-            git.clone("https://github.com/InsightSoftwareConsortium/ITKElastix", "v0.15.0", shallow=True)
+                # download the elastix source code
+                git = tools.Git(folder=self._source_elastix_subfolder)
+                git.clone("https://github.com/InsightSoftwareConsortium/ITKElastix", "v0.15.0", shallow=True)
 
-            # configure and patch elastix
-            cmake = self._configure_elastix()
-            tools.patch(base_path=self._source_elastix_buildfolder,
-                        patch_file="elastix/patches/0001-elastix.patch")
-            if self.options.with_python_bindings:
-                env = tools.environment_append({"PYTHONPATH": os.path.join(self.source_folder, self._source_subfolder, "Modules", "ThirdParty", "pygccxml", "src")})
-            else:
-                env = tools.no_op()
-            with env:
-                cmake.build()
+                # configure and patch elastix
+                cmake = self._configure_elastix()
+                tools.patch(base_path=self._source_elastix_buildfolder,
+                            patch_file="elastix/patches/0001-elastix.patch")
+                if self.options.with_python_bindings:
+                    env = tools.environment_append({"PYTHONPATH": os.path.join(self.source_folder, self._source_subfolder, "Modules", "ThirdParty", "pygccxml", "src")})
+                else:
+                    env = tools.no_op()
+                with env:
+                    cmake.build()
 
     def package(self):
         self.copy("LICENSE", dst="licenses", src=self._source_subfolder)
