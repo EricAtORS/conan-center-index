@@ -6,9 +6,9 @@
 from conan import ConanFile
 from conan.errors import ConanInvalidConfiguration, ConanException
 from conan.tools.cmake import CMakeToolchain, CMakeDeps, CMake, cmake_layout
-from conan.tools.build import check_min_cppstd
+from conan.tools.build import check_min_cppstd, valid_min_cppstd
 from conan.tools.microsoft import check_min_vs, is_msvc
-from conan.tools.files import apply_conandata_patches, export_conandata_patches, get, copy, rmdir, save, rename, collect_libs, load, replace_in_file
+from conan.tools.files import apply_conandata_patches, export_conandata_patches, get, copy, rmdir, save, rename, collect_libs, load, replace_in_file, rm
 from conan.tools.scm import Version
 
 from shutil import which
@@ -203,6 +203,7 @@ class VtkConan(ConanFile):
             "module_enable_IOLegacy":          ["DEFAULT", "YES", "NO", "WANT", "DONT_WANT"],
             "module_enable_RenderingCore":     ["DEFAULT", "YES", "NO", "WANT", "DONT_WANT"],
             "module_enable_RenderingExternal": ["DEFAULT", "YES", "NO", "WANT", "DONT_WANT"],
+            "module_enable_ChartsCore":        ["DEFAULT", "YES", "NO", "WANT", "DONT_WANT"],
 
             # Qt-specific modules
             "qt_version": ["Auto", "5", "6"],
@@ -297,6 +298,7 @@ class VtkConan(ConanFile):
             "module_enable_IOLegacy":          "DEFAULT",
             "module_enable_RenderingCore":     "DEFAULT",
             "module_enable_RenderingExternal": "DEFAULT",
+            "module_enable_ChartsCore":        "DEFAULT",
 
             # these aren't supported yet, need to system-install packages
             "module_enable_IOPDAL":            "NO",
@@ -640,6 +642,7 @@ class VtkConan(ConanFile):
         tc.variables["VTK_MODULE_ENABLE_VTK_IOLegacy"]          = _yesno(self.options.module_enable_IOLegacy)
         tc.variables["VTK_MODULE_ENABLE_VTK_RenderingCore"]     = _yesno(self.options.module_enable_RenderingCore)
         tc.variables["VTK_MODULE_ENABLE_VTK_RenderingExternal"] = _yesno(self.options.module_enable_RenderingExternal)
+        tc.variables["VTK_MODULE_ENABLE_VTK_ChartsCore"]          = _yesno(self.options.module_enable_ChartsCore)
 
         # Modules that aren't supported yet
         tc.variables["VTK_MODULE_ENABLE_VTK_IOPDAL"]            = _yesno(self.options.module_enable_IOPDAL)
@@ -752,6 +755,9 @@ class VtkConan(ConanFile):
         # proj is proj and PROJ::proj, but VTK wants LibPROJ and LibPROJ::LibPROJ
         deps.set_property("proj", "cmake_file_name", "LibPROJ")
         deps.set_property("proj", "cmake_target_name", "LibPROJ::LibPROJ")
+        #
+        # by pass the vtk FindGLEW file.
+        deps.set_property("glew", "cmake_find_mode", "both")
         # VTK also wants a variable LibPROJ_MAJOR_VERSION, which conan has as proj_VERSION_MAJOR
         tc.variables["LibPROJ_MAJOR_VERSION"] = Version(self.dependencies["proj"].ref.version).major
         #
@@ -765,8 +771,16 @@ class VtkConan(ConanFile):
 
 
     def build(self):
+        
+        if not valid_min_cppstd(self, "20"):
+            self.conan_data["patches"][self.version] = [patch for patch in self.conan_data["patches"][self.version] 
+                                                        if "cxx20" not in patch['patch_file']]   
         apply_conandata_patches(self)
-
+        
+        with open(os.path.join(self.source_folder, "CMake", "FindGLEW.cmake"), "w"):
+            # clear the contents of find glew from vtk
+            pass
+        
         if self.options.wrap_python and self.settings.build_type == "Debug" and self.settings.os == "Windows":
             # This is specifically for Python < 3.8
             # Building VTK in Debug, on Windows, with Python < 3.8,
