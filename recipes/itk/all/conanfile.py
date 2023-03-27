@@ -311,6 +311,7 @@ class ITKConan(ConanFile):
         # Disabled because Vxl vidl is not built anymore
         self._cmake.definitions["Module_ITKVideoBridgeVXL"] = False
 
+        self._cmake.definitions["Module_IOScanco"] = self.options.with_scanco
         if self.options.with_dcmtk:
             self._cmake.definitions["ITK_USE_SYSTEM_DCMTK"] = True
             self._cmake.definitions["Module_ITKDCMTK"] = True
